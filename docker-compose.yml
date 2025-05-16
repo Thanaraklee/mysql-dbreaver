@@ -1,0 +1,73 @@
+services:
+
+  traefik:
+    image: traefik:v3.4.0
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - "--api.dashboard=false"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.le.acme.tlschallenge=false"
+      - "--certificatesresolvers.le.acme.email=${TRAEFIK_EMAIL}"
+      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.le.acme.httpchallenge=true"
+      - "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web"
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - letsencrypt:/letsencrypt
+    networks:
+      - backend
+
+  mysql:
+    image: mysql:8.3
+    container_name: mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - backend
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  dbeaver:
+    image: dbeaver/cloudbeaver:25.0.4
+    container_name: dbeaver
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dbeaver.rule=Host(`localhost`)"
+      - "traefik.http.routers.dbeaver.entrypoints=web"
+      # - "traefik.http.routers.dbeaver.entrypoints=websecure"
+      # - "traefik.http.routers.dbeaver.tls.certresolver=le"
+    networks:
+      - backend
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - dbeaver_data:/opt/cloudbeaver/workspace
+
+volumes:
+  mysql_data:
+  dbeaver_data:
+  letsencrypt:
+
+networks:
+  backend:
+    driver: bridge
